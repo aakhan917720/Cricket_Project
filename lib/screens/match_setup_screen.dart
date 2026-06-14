@@ -311,7 +311,7 @@ class _MatchSettingsTab extends StatelessWidget {
 
           // Players per team (1-11)
           _SetupCard(
-            title: '👥 Players Per Team (1-11)',
+            title: '👥 Players In Team (1-11)',
             child: Column(
               children: [
                 Row(

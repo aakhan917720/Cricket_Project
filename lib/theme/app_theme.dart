@@ -59,9 +59,9 @@ class AppTheme {
           textStyle: GoogleFonts.poppins(fontWeight: FontWeight.w700, fontSize: 15),
         ),
       ),
-      cardTheme: CardTheme(
+      cardTheme: CardThemeData(
         color: cardBg,
-        elevation: 0,
+        elevation: 0.0,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(14),
           side: const BorderSide(color: cardBorder, width: 0.5),

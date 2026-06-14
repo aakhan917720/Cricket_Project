@@ -1,4 +1,5 @@
 // lib/screens/scoring_screen.dart
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
@@ -107,7 +108,7 @@ class _ScoringScreenState extends State<ScoringScreen>
       shape: const RoundedRectangleBorder(
           borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
       builder: (_) => _PlayerPickerSheet(
-        title: '🎯 Bowler Chuno',
+        title: '🎯 Bowler Chuno', // BOWLER
         players: _match.bowlingTeam.players,
         onSelect: (idx) {
           context.read<MatchProvider>().setBowler(idx);
@@ -151,7 +152,7 @@ class _ScoringScreenState extends State<ScoringScreen>
         backgroundColor: AppTheme.cardBg,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: Text('⚡ Innings Break', style: GoogleFonts.poppins(
-          color: Colors.white, fontWeight: FontWeight.w700)),
+            color: Colors.white, fontWeight: FontWeight.w700)),
         content: Column(mainAxisSize: MainAxisSize.min, children: [
           Text('1st Innings khatam!', style: GoogleFonts.poppins(color: Colors.white70)),
           const SizedBox(height: 10),
@@ -181,10 +182,10 @@ class _ScoringScreenState extends State<ScoringScreen>
         backgroundColor: AppTheme.cardBg,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: Text('🏆 Match Khatam!', style: GoogleFonts.poppins(
-          color: AppTheme.accentGreen, fontWeight: FontWeight.w800, fontSize: 22),
-          textAlign: TextAlign.center),
+            color: AppTheme.accentGreen, fontWeight: FontWeight.w800, fontSize: 22),
+            textAlign: TextAlign.center),
         content: Text(_match.result, style: GoogleFonts.poppins(
-          color: Colors.white, fontSize: 16), textAlign: TextAlign.center),
+            color: Colors.white, fontSize: 16), textAlign: TextAlign.center),
         actions: [
           ElevatedButton(
             onPressed: () {
@@ -203,7 +204,7 @@ class _ScoringScreenState extends State<ScoringScreen>
       backgroundColor: AppTheme.darkBg,
       appBar: AppBar(
         title: Text('${_match.team1.name} vs ${_match.team2.name}',
-          style: GoogleFonts.poppins(fontSize: 15)),
+            style: GoogleFonts.poppins(fontSize: 15)),
         actions: [
           IconButton(
             icon: const Icon(Icons.undo_rounded),
@@ -350,7 +351,7 @@ class _ScoreBoard extends StatelessWidget {
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                 decoration: BoxDecoration(color: Colors.red, borderRadius: BorderRadius.circular(5)),
                 child: Text('LIVE', style: GoogleFonts.poppins(
-                  fontSize: 10, fontWeight: FontWeight.w800, color: Colors.white)),
+                    fontSize: 10, fontWeight: FontWeight.w800, color: Colors.white)),
               ),
               const SizedBox(width: 10),
               Text(
@@ -372,9 +373,9 @@ class _ScoreBoard extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(match.oversDisplay, style: GoogleFonts.poppins(
-                    fontSize: 22, fontWeight: FontWeight.w700, color: Colors.white70)),
+                      fontSize: 22, fontWeight: FontWeight.w700, color: Colors.white70)),
                   Text('CRR: ${match.currentRunRate.toStringAsFixed(2)}',
-                    style: GoogleFonts.poppins(fontSize: 12, color: AppTheme.accentGreen)),
+                      style: GoogleFonts.poppins(fontSize: 12, color: AppTheme.accentGreen)),
                 ],
               ),
             ],
@@ -395,7 +396,7 @@ class _ScoreBoard extends StatelessWidget {
                     style: GoogleFonts.poppins(fontSize: 12, color: AppTheme.goldAccent),
                   ),
                   Text('RRR: ${match.requiredRunRate.toStringAsFixed(2)}',
-                    style: GoogleFonts.poppins(fontSize: 12, color: AppTheme.goldAccent)),
+                      style: GoogleFonts.poppins(fontSize: 12, color: AppTheme.goldAccent)),
                 ],
               ),
             ),
@@ -454,16 +455,16 @@ class _BatsmanCard extends StatelessWidget {
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: player.photoPath != null
-                  ? ClipRRect(
-                      borderRadius: BorderRadius.circular(8),
-                      child: Image.file(
-                        import_dart_io.File(player.photoPath!), fit: BoxFit.cover),
-                    )
-                  : Center(child: Text(
-                      player.name.substring(0, 1),
-                      style: GoogleFonts.poppins(
-                        fontWeight: FontWeight.w800, color: AppTheme.accentGreen),
-                    )),
+                    ? ClipRRect(
+                  borderRadius: BorderRadius.circular(8),
+                  child: Image.file(
+                      File(player.photoPath!), fit: BoxFit.cover),
+                )
+                    : Center(child: Text(
+                  player.name.substring(0, 1),
+                  style: GoogleFonts.poppins(
+                      fontWeight: FontWeight.w800, color: AppTheme.accentGreen),
+                )),
               ),
               const SizedBox(width: 8),
               Expanded(
@@ -473,8 +474,8 @@ class _BatsmanCard extends StatelessWidget {
                     Row(
                       children: [
                         Flexible(child: Text(player.name,
-                          style: GoogleFonts.poppins(fontSize: 12, fontWeight: FontWeight.w700, color: Colors.white),
-                          overflow: TextOverflow.ellipsis)),
+                            style: GoogleFonts.poppins(fontSize: 12, fontWeight: FontWeight.w700, color: Colors.white),
+                            overflow: TextOverflow.ellipsis)),
                         if (isStriker)
                           const Padding(
                             padding: EdgeInsets.only(left: 4),
@@ -493,9 +494,9 @@ class _BatsmanCard extends StatelessWidget {
           ),
           const SizedBox(height: 6),
           Text('${player.runs}', style: GoogleFonts.poppins(
-            fontSize: 24, fontWeight: FontWeight.w900, color: AppTheme.accentGreen)),
+              fontSize: 24, fontWeight: FontWeight.w900, color: AppTheme.accentGreen)),
           Text('SR: ${player.strikeRate.toStringAsFixed(1)}',
-            style: GoogleFonts.poppins(fontSize: 10, color: const Color(0xFF6B8FA6))),
+              style: GoogleFonts.poppins(fontSize: 10, color: const Color(0xFF6B8FA6))),
         ],
       ),
     );
@@ -525,8 +526,8 @@ class _BowlerRow extends StatelessWidget {
               borderRadius: BorderRadius.circular(8),
             ),
             child: Center(child: Text(bowler.name.substring(0, 1),
-              style: GoogleFonts.poppins(fontWeight: FontWeight.w800,
-                  color: const Color(0xFF42A5F5)))),
+                style: GoogleFonts.poppins(fontWeight: FontWeight.w800,
+                    color: const Color(0xFF42A5F5)))),
           ),
           const SizedBox(width: 10),
           Expanded(
@@ -534,15 +535,15 @@ class _BowlerRow extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(bowler.name, style: GoogleFonts.poppins(
-                  fontSize: 13, fontWeight: FontWeight.w700, color: Colors.white)),
+                    fontSize: 13, fontWeight: FontWeight.w700, color: Colors.white)),
                 Text('${bowler.oversStr} ov | ${bowler.runsGiven} runs',
-                  style: GoogleFonts.poppins(fontSize: 10, color: const Color(0xFF6B8FA6))),
+                    style: GoogleFonts.poppins(fontSize: 10, color: const Color(0xFF6B8FA6))),
               ],
             ),
           ),
           Text('${bowler.wicketsTaken}/${bowler.runsGiven}',
-            style: GoogleFonts.poppins(fontSize: 18, fontWeight: FontWeight.w800,
-                color: AppTheme.goldAccent)),
+              style: GoogleFonts.poppins(fontSize: 18, fontWeight: FontWeight.w800,
+                  color: AppTheme.goldAccent)),
         ],
       ),
     );
@@ -567,7 +568,7 @@ class _BallTrackerWidget extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text('Is Over Ki Balls', style: GoogleFonts.poppins(
-            fontSize: 11, color: const Color(0xFF6B8FA6))),
+              fontSize: 11, color: const Color(0xFF6B8FA6))),
           const SizedBox(height: 8),
           Wrap(
             spacing: 6, runSpacing: 6,
@@ -593,13 +594,13 @@ class _BallTrackerWidget extends StatelessWidget {
                   border: Border.all(color: fg.withOpacity(0.5)),
                 ),
                 child: Center(child: Text(b.isWicket ? 'W' : b.displayLabel,
-                  style: GoogleFonts.poppins(fontSize: 12, fontWeight: FontWeight.w800, color: fg))),
+                    style: GoogleFonts.poppins(fontSize: 12, fontWeight: FontWeight.w800, color: fg))),
               );
             }).toList(),
           ),
           if (match.currentOverBalls.isEmpty)
             Text('Koi ball nahi abi', style: GoogleFonts.poppins(
-              fontSize: 12, color: const Color(0xFF6B8FA6))),
+                fontSize: 12, color: const Color(0xFF6B8FA6))),
         ],
       ),
     );
@@ -710,7 +711,7 @@ class _RunsGrid extends StatelessWidget {
           ),
           child: Center(
             child: Text(r.label, style: GoogleFonts.poppins(
-              fontSize: 20, fontWeight: FontWeight.w900, color: r.fg)),
+                fontSize: 20, fontWeight: FontWeight.w900, color: r.fg)),
           ),
         ),
       )).toList(),
@@ -760,7 +761,7 @@ class _WicketGrid extends StatelessWidget {
           ),
           child: Center(
             child: Text(m, style: GoogleFonts.poppins(
-              fontSize: 13, fontWeight: FontWeight.w700, color: const Color(0xFFEF9A9A))),
+                fontSize: 13, fontWeight: FontWeight.w700, color: const Color(0xFFEF9A9A))),
           ),
         ),
       )).toList(),
@@ -793,7 +794,7 @@ class _ScorecardSection extends StatelessWidget {
           Padding(
             padding: const EdgeInsets.all(12),
             child: Text(title, style: GoogleFonts.poppins(
-              fontSize: 14, fontWeight: FontWeight.w700, color: Colors.white)),
+                fontSize: 14, fontWeight: FontWeight.w700, color: Colors.white)),
           ),
           Table(
             children: [
@@ -802,15 +803,15 @@ class _ScorecardSection extends StatelessWidget {
                 children: headers.map((h) => Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
                   child: Text(h, style: GoogleFonts.poppins(
-                    fontSize: 11, fontWeight: FontWeight.w700,
-                    color: const Color(0xFF6B8FA6))),
+                      fontSize: 11, fontWeight: FontWeight.w700,
+                      color: const Color(0xFF6B8FA6))),
                 )).toList(),
               ),
               ...rows.map((row) => TableRow(
                 children: row.map((cell) => Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
                   child: Text(cell, style: GoogleFonts.poppins(
-                    fontSize: 12, color: Colors.white)),
+                      fontSize: 12, color: Colors.white)),
                 )).toList(),
               )),
             ],
@@ -839,9 +840,9 @@ class _ExtrasCard extends StatelessWidget {
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
           Text('Extras', style: GoogleFonts.poppins(
-            fontSize: 14, fontWeight: FontWeight.w700, color: Colors.white)),
+              fontSize: 14, fontWeight: FontWeight.w700, color: Colors.white)),
           Text('${match.extras[match.innings]}', style: GoogleFonts.poppins(
-            fontSize: 18, fontWeight: FontWeight.w800, color: AppTheme.goldAccent)),
+              fontSize: 18, fontWeight: FontWeight.w800, color: AppTheme.goldAccent)),
         ],
       ),
     );
@@ -857,8 +858,8 @@ class _SectionLabel extends StatelessWidget {
     return Align(
       alignment: Alignment.centerLeft,
       child: Text(label, style: GoogleFonts.poppins(
-        fontSize: 13, fontWeight: FontWeight.w700,
-        color: const Color(0xFF6B8FA6), letterSpacing: 0.3)),
+          fontSize: 13, fontWeight: FontWeight.w700,
+          color: const Color(0xFF6B8FA6), letterSpacing: 0.3)),
     );
   }
 }
@@ -881,7 +882,7 @@ class _PlayerPickerSheet extends StatelessWidget {
           Padding(
             padding: const EdgeInsets.all(16),
             child: Text(title, style: GoogleFonts.poppins(
-              fontSize: 18, fontWeight: FontWeight.w700, color: Colors.white)),
+                fontSize: 18, fontWeight: FontWeight.w700, color: Colors.white)),
           ),
           ...players.asMap().entries.map((e) => ListTile(
             leading: Container(
@@ -891,11 +892,11 @@ class _PlayerPickerSheet extends StatelessWidget {
                 borderRadius: BorderRadius.circular(8),
               ),
               child: Center(child: Text('${e.key + 1}', style: GoogleFonts.poppins(
-                fontWeight: FontWeight.w800, color: AppTheme.accentGreen))),
+                  fontWeight: FontWeight.w800, color: AppTheme.accentGreen))),
             ),
             title: Text(e.value.name, style: GoogleFonts.poppins(color: Colors.white)),
             subtitle: Text(e.value.role, style: GoogleFonts.poppins(
-              fontSize: 12, color: const Color(0xFF6B8FA6))),
+                fontSize: 12, color: const Color(0xFF6B8FA6))),
             onTap: () {
               Navigator.pop(context);
               onSelect(e.key);
@@ -907,6 +908,3 @@ class _PlayerPickerSheet extends StatelessWidget {
     );
   }
 }
-
-// Fix: need dart:io import for File
-import 'dart:io' as import_dart_io show File;

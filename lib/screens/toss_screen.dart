@@ -6,6 +6,8 @@ import 'package:uuid/uuid.dart';
 import '../models/models.dart';
 import '../theme/app_theme.dart';
 import 'scoring_screen.dart';
+import 'dart:io';
+
 
 class TossScreen extends StatefulWidget {
   final TeamModel team1;
@@ -200,7 +202,7 @@ class _TossScreenState extends State<TossScreen>
                         child: Center(
                           child: Text(
                             _isFlipping ? '🪙' :
-                                (_tossComplete ? '✅' : '🪙'),
+                                (_tossComplete ? '✅' : '🪙'), // TOSS MANAGEMENT KALIYE SET KARO
                             style: const TextStyle(fontSize: 50),
                           ),
                         ),

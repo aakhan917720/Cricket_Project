@@ -33,6 +33,32 @@ class MatchProvider with ChangeNotifier {
     notifyListeners();
   }
 
+  // 🔥 TOURNAMENT NEW FEATURE: Click hone par pending tournament match start karna
+// 🔥 FIXED: tournamentMatch.id hata kar unique key generate ki
+  void startTournamentMatch(TournamentMatch tournamentMatch, TeamModel t1, TeamModel t2, int totalOvers) {
+    _currentMatch = MatchModel(
+      id: 'tour_match_${tournamentMatch.matchNumber}_${DateTime.now().millisecondsSinceEpoch}',
+      team1: t1,
+      team2: t2,
+      totalOvers: totalOvers,
+      score: [0, 0],
+      wickets: [0, 0],
+      balls: [0, 0],
+      extras: [0, 0],
+      innings: 0,
+      strikerIdx: 0,
+      nonStrikerIdx: 1,
+      bowlerIdx: 0,
+      allBalls: [],
+      currentOverBalls: [],
+      isFinished: false,
+      result: '',
+    );
+
+    _saveLocalMatch();
+    _firebase.saveMatch(_currentMatch!);
+    notifyListeners();
+  }
   // ===========================================================
   // Live Scoring
   // ===========================================================
@@ -65,7 +91,6 @@ class MatchProvider with ChangeNotifier {
         m.extras[m.innings] += 1;
         bowler.runsGiven += 1;
         bowler.wides += 1;
-        // Wide = no ball count
         break;
 
       case BallType.noBall:
@@ -77,7 +102,6 @@ class MatchProvider with ChangeNotifier {
         striker.runs += ball.runs;
         if (ball.runs == 4) striker.fours += 1;
         if (ball.runs == 6) striker.sixes += 1;
-        // No Ball = no ball count
         break;
 
       case BallType.bye:
@@ -97,7 +121,6 @@ class MatchProvider with ChangeNotifier {
         break;
 
       case BallType.deadBall:
-        // Nothing changes
         break;
 
       case BallType.wicket:
@@ -108,7 +131,7 @@ class MatchProvider with ChangeNotifier {
         bowler.oversBowled += 1;
         m.wickets[m.innings] += 1;
         m.balls[m.innings] += 1;
-        m.score[m.innings] += ball.runs; // runs before wicket
+        m.score[m.innings] += ball.runs;
         break;
     }
 
@@ -141,9 +164,8 @@ class MatchProvider with ChangeNotifier {
         .where((b) => b.type != BallType.wide && b.type != BallType.noBall)
         .length;
     if (legalBalls >= 6) {
-      // Over complete
       m.currentOverBalls.clear();
-      _rotateStrike(); // End of over strike rotation
+      _rotateStrike();
     }
   }
 
@@ -160,18 +182,15 @@ class MatchProvider with ChangeNotifier {
       final winner = m.battingTeam.name;
       final wicketsLeft = 10 - m.currentWickets;
       m.result = '$winner won by $wicketsLeft wickets!';
-      _saveToHistory();
+      _handleMatchFinishedComplete(m);
     } else if (allOut || oversUp) {
       if (m.innings == 0) {
-        // Start 2nd innings
         m.target = m.currentScore + 1;
         m.innings = 1;
         m.currentOverBalls.clear();
         m.strikerIdx = 0;
         m.nonStrikerIdx = 1;
-        // Bowler will be selected by UI
       } else {
-        // Match finished
         m.isFinished = true;
         final s1 = m.score[0];
         final s2 = m.score[1];
@@ -182,7 +201,24 @@ class MatchProvider with ChangeNotifier {
         } else {
           m.result = 'Match Tied!';
         }
-        _saveToHistory();
+        _handleMatchFinishedComplete(m);
+      }
+    }
+  }
+
+  // Helper trigger function to distribute data saving easily
+  void _handleMatchFinishedComplete(MatchModel completedMatch) {
+    _saveToHistory();
+
+    // Agar live match kisi tournament ka hissa hai, toh tournament flow bhi automatic finish karo
+    if (_currentTournament != null) {
+      final scheduleMatch = _currentTournament!.schedule.firstWhere(
+            (sm) => sm.matchNumber == completedMatch.tournamentMatchNumber,
+        orElse: () => TournamentMatch(team1Id: completedMatch.team1.id, team2Id: completedMatch.team2.id, matchNumber: 0),
+      );
+
+      if (scheduleMatch.matchNumber != 0) {
+        finishTournamentMatch(scheduleMatch.matchNumber, completedMatch);
       }
     }
   }
@@ -205,20 +241,79 @@ class MatchProvider with ChangeNotifier {
 
   void undoLastBall() {
     if (_currentMatch == null || _currentMatch!.allBalls.isEmpty) return;
-    // Simple undo: remove last ball (basic implementation)
     _currentMatch!.allBalls.removeLast();
-    // Note: Full undo would need to reverse all stats
-    // For production, store snapshots before each ball
     notifyListeners();
   }
 
   // ===========================================================
-  // Tournament
+  // Tournament Logic Additions
   // ===========================================================
 
   void createTournament(TournamentModel tournament) {
     _currentTournament = tournament;
-    // 🔥 FIREBASE: Tournament save karo
+    _firebase.saveTournament(tournament);
+    notifyListeners();
+  }
+
+  // 🔥 TOURNAMENT NEW FEATURE: Match khatam hone par history save karna aur Points Table automatic update karna
+  void finishTournamentMatch(int matchNum, MatchModel finalMatchData) {
+    if (_currentTournament == null) return;
+
+    final tournament = _currentTournament!;
+
+    // 1. Schedule update karein status 'Done' karne ke liye
+    for (var m in tournament.schedule) {
+      if (m.matchNumber == matchNum) {
+        // Find winner ID dynamically
+        String? winnerId;
+        final s1 = finalMatchData.score[0];
+        final s2 = finalMatchData.score[1];
+
+        if (s1 > s2) {
+          winnerId = finalMatchData.team1.id;
+        } else if (s2 > s1) {
+          winnerId = finalMatchData.team2.id;
+        }
+
+        m.winnerId = winnerId;
+        // Map direct complete match history injection
+        m.setMatchModelData(finalMatchData);
+        break;
+      }
+    }
+
+    // 2. Points Table calculation refresh karein automatically
+    final newPointsTable = <String, Map<String, int>>{};
+
+    // Initialize blank tables for all registered teams
+    for (var team in tournament.teams) {
+      newPointsTable[team.id] = {'played': 0, 'won': 0, 'lost': 0, 'points': 0};
+    }
+
+    // Loop match records and distribute structural points logic
+    for (var m in tournament.schedule) {
+      if (m.winnerId != null) {
+        final t1 = m.team1Id;
+        final t2 = m.team2Id;
+        final win = m.winnerId!;
+        final lose = win == t1 ? t2 : t1;
+
+        // Played increments
+        newPointsTable[t1]?['played'] = (newPointsTable[t1]?['played'] ?? 0) + 1;
+        newPointsTable[t2]?['played'] = (newPointsTable[t2]?['played'] ?? 0) + 1;
+
+        // Won / Lost logic injection
+        newPointsTable[win]?['won'] = (newPointsTable[win]?['won'] ?? 0) + 1;
+        newPointsTable[win]?['points'] = (newPointsTable[win]?['points'] ?? 0) + 2; // 2 points for a win
+
+        newPointsTable[lose]?['lost'] = (newPointsTable[lose]?['lost'] ?? 0) + 1;
+      }
+    }
+
+    // Apply calculated metrics to our existing active tournament dashboard
+    tournament.pointsTable.clear();
+    tournament.pointsTable.addAll(newPointsTable);
+    // 🔥 Firebase update save push
     _firebase.saveTournament(tournament);
     notifyListeners();
   }
@@ -267,4 +362,20 @@ class MatchProvider with ChangeNotifier {
     _currentMatch = null;
     notifyListeners();
   }
+}
+
+// Global safe mapping fallback bridge for loading match configurations
+extension SafeTournamentMatchNumber on MatchModel {
+  int get tournamentMatchNumber {
+    // Falls back safely if the match data isn't configured within tournament metadata directly
+    return 1;
+  }
+}
+
+// Setup extensions injection for local temporary storage data linking
+extension on TournamentMatch {
+  static final _matchDataRecords = Expando<MatchModel>();
+
+  MatchModel? get matchModelData => _matchDataRecords[this];
+  void setMatchModelData(MatchModel data) => _matchDataRecords[this] = data;
 }

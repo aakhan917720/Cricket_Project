@@ -11,15 +11,12 @@ dependencies:
     sdk: flutter
 
   # UI & Fonts
-  cupertino_icons: ^1.0.6
-  google_fonts: ^6.1.0
-  flutter_animate: ^4.3.0
-
-  # 🔥 FIREBASE - Firebase ke liye yeh packages chahiye
-  firebase_core: ^2.24.2
-  firebase_auth: ^4.16.0
-  cloud_firestore: ^4.14.0
-  firebase_storage: ^11.6.0
+  cupertino_icons: ^1.0.9
+  google_fonts: ^8.1.0
+  flutter_animate: ^4.5.2
+  firebase_auth: ^6.5.2
+  cloud_firestore: ^6.5.0
+  fluttertoast: ^9.1.0
 
   # Images & Media
   image_picker: ^1.0.7
@@ -39,6 +36,7 @@ dependencies:
   uuid: ^4.3.3
   path_provider: ^2.1.2
   path: ^1.9.0
+  firebase_core: ^4.10.0
 
 dev_dependencies:
   flutter_test:
@@ -48,5 +46,5 @@ dev_dependencies:
 flutter:
   uses-material-design: true
   assets:
-    - assets/images/
-    - assets/animations/
+#    - assets/images/
+#    - assets/animations/

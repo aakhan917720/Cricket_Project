@@ -1,11 +1,5 @@
-// lib/main.dart
-//
-// 🔥 FIREBASE SETUP:
-// 1. https://console.firebase.google.com → New Project
-// 2. "flutterfire configure" command run karein project mein
-// 3. firebase_options.dart auto-generate hoga
-// 4. Neeche firebase_options.dart ka import uncomment karein
-// 5. main() mein Firebase.initializeApp() uncomment karein
+import 'package:firebase_core/firebase_core.dart';
+import 'firebase_options.dart';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -33,10 +27,10 @@ void main() async {
     DeviceOrientation.portraitDown,
   ]);
 
-  // 🔥 FIREBASE UNCOMMENT: Firebase initialize karein
-  // await Firebase.initializeApp(
-  //   options: DefaultFirebaseOptions.currentPlatform,
-  // );
+  WidgetsFlutterBinding.ensureInitialized();
+  await Firebase.initializeApp(
+    options: DefaultFirebaseOptions.currentPlatform,
+  );
 
   runApp(const CricketScorerApp());
 }
