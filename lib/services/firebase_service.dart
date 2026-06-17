@@ -22,6 +22,7 @@
 // }
 
 import 'dart:io';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
 // 🔥 FIREBASE IMPORTS - uncomment when Firebase setup ho jaye:
 // import 'package:firebase_core/firebase_core.dart';
@@ -205,6 +206,20 @@ class FirebaseService {
     // }
     debugPrint('🔥 FIREBASE: saveTournament() - Firebase setup karein');
   }
+
+
+  // 🔥 TOURNAMENT DELETE FUNCTION FOR CLOUD FIRESTORE
+  Future<void> deleteTournament(String tournamentId) async {
+    try {
+      await FirebaseFirestore.instance.collection('tournaments').doc(tournamentId).delete();
+      print('Tournament deleted from Cloud Firestore successfully.');
+    } catch (e) {
+      print('Firebase tournament deletion error: $e');
+    }
+  }
+
+
+
 
   /// Tournament update (match result ke baad)
   Future<void> updateTournamentMatch(

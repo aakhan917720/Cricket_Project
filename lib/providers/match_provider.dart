@@ -1,67 +1,109 @@
 // lib/providers/match_provider.dart
-import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:firebase_database/firebase_database.dart';
 import 'dart:convert';
 import '../models/models.dart';
-import '../services/firebase_service.dart';
 
 class MatchProvider with ChangeNotifier {
   MatchModel? _currentMatch;
   TournamentModel? _currentTournament;
-  List<Map<String, dynamic>> _matchHistory = [];
-  List<Map<String, dynamic>> _tournaments = [];
+  List<MatchModel> _matchHistory = [];
+  List<TournamentModel> _tournaments = [];
   bool _isLoading = false;
+  bool showInningsBreakAnimation = false;
 
-  final FirebaseService _firebase = FirebaseService();
+  // 🔥 CONSTRUCTOR: App chalte hi sara data background mein load karega
+  MatchProvider() {
+    loadAllSavedData();
+  }
 
   MatchModel? get currentMatch => _currentMatch;
   TournamentModel? get currentTournament => _currentTournament;
-  List<Map<String, dynamic>> get matchHistory => _matchHistory;
-  List<Map<String, dynamic>> get tournaments => _tournaments;
+  List<MatchModel> get matchHistory => _matchHistory;
+  List<TournamentModel> get tournaments => _tournaments;
   bool get isLoading => _isLoading;
   bool get hasActiveMatch => _currentMatch != null && !(_currentMatch!.isFinished);
 
   // ===========================================================
-  // Match Setup
+  // 🔄 UI/Screen Backward Compatibility Methods (Errors Fix)
+  // ===========================================================
+
+  // Fixes: dashboard_screen.dart error
+  Future<void> loadHistory() async {
+    await loadAllSavedData();
+  }
+
+  // Fixes: history_screen.dart error
+  void setCurrentTournament(TournamentModel tournament) {
+    _currentTournament = tournament;
+    _saveTournamentsToLocal();
+    notifyListeners();
+  }
+
+  // Fixes: Match deletion error
+  void deleteMatch(String matchId) {
+    _matchHistory.removeWhere((m) => m.id == matchId);
+
+    // Direct Cloud Realtime Database se delete karein
+    FirebaseDatabase.instance.ref().child('matches').child(matchId).remove();
+
+    _saveLocalMatch();
+    notifyListeners();
+  }
+
+  // ===========================================================
+  // Match Setup & Live Scoring Logic
   // ===========================================================
 
   void startNewMatch(MatchModel match) {
     _currentMatch = match;
     _saveLocalMatch();
-    // 🔥 FIREBASE: Firestore mein save karo
-    _firebase.saveMatch(match);
     notifyListeners();
   }
 
-  // 🔥 TOURNAMENT NEW FEATURE: Click hone par pending tournament match start karna
-// 🔥 FIXED: tournamentMatch.id hata kar unique key generate ki
   void startTournamentMatch(TournamentMatch tournamentMatch, TeamModel t1, TeamModel t2, int totalOvers) {
-    _currentMatch = MatchModel(
-      id: 'tour_match_${tournamentMatch.matchNumber}_${DateTime.now().millisecondsSinceEpoch}',
-      team1: t1,
-      team2: t2,
-      totalOvers: totalOvers,
-      score: [0, 0],
-      wickets: [0, 0],
-      balls: [0, 0],
-      extras: [0, 0],
-      innings: 0,
-      strikerIdx: 0,
-      nonStrikerIdx: 1,
-      bowlerIdx: 0,
-      allBalls: [],
-      currentOverBalls: [],
-      isFinished: false,
-      result: '',
-    );
+    if (t1.players.isEmpty) {
+      t1.players = List.generate(11, (index) => PlayerModel(id: 't1_p_$index', name: '${t1.name} Bat ${index + 1}'));
+    }
+    if (t2.players.isEmpty) {
+      t2.players = List.generate(11, (index) => PlayerModel(id: 't2_p_$index', name: '${t2.name} Bowl ${index + 1}'));
+    }
+
+    if (tournamentMatch.matchDetails != null && tournamentMatch.matchStatus == 'live') {
+      _currentMatch = tournamentMatch.matchDetails;
+    } else {
+      _currentMatch = MatchModel(
+        id: tournamentMatch.matchId,
+        tournamentId: _currentTournament?.id,
+        team1: t1,
+        team2: t2,
+        totalOvers: totalOvers,
+        ballsPerOver: _currentTournament?.ballsPerOver ?? 6,
+        score: [0, 0],
+        wickets: [0, 0],
+        balls: [0, 0],
+        extras: [0, 0],
+        innings: 0,
+        strikerIdx: 0,
+        nonStrikerIdx: 1,
+        bowlerIdx: 0,
+        allBalls: [],
+        currentOverBalls: [],
+        isFinished: false,
+        result: '',
+      );
+      tournamentMatch.matchStatus = 'live';
+      tournamentMatch.matchDetails = _currentMatch;
+    }
+
+    if (_currentTournament != null) {
+      _saveTournamentsToLocal();
+    }
 
     _saveLocalMatch();
-    _firebase.saveMatch(_currentMatch!);
     notifyListeners();
   }
-  // ===========================================================
-  // Live Scoring
-  // ===========================================================
 
   void addBall(BallModel ball) {
     if (_currentMatch == null) return;
@@ -71,7 +113,6 @@ class MatchProvider with ChangeNotifier {
     final striker = bt.players[m.strikerIdx];
     final bowler = bwt.players[m.bowlerIdx];
 
-    // Apply ball effect
     switch (ball.type) {
       case BallType.normal:
         striker.runs += ball.runs;
@@ -82,17 +123,14 @@ class MatchProvider with ChangeNotifier {
         bowler.oversBowled += 1;
         m.score[m.innings] += ball.runs;
         m.balls[m.innings] += 1;
-        // Rotate strike on odd runs
         if (ball.runs % 2 != 0) _rotateStrike();
         break;
-
       case BallType.wide:
         m.score[m.innings] += 1;
         m.extras[m.innings] += 1;
         bowler.runsGiven += 1;
         bowler.wides += 1;
         break;
-
       case BallType.noBall:
         m.score[m.innings] += (1 + ball.runs);
         m.extras[m.innings] += 1;
@@ -100,18 +138,8 @@ class MatchProvider with ChangeNotifier {
         bowler.noBalls += 1;
         striker.balls += 1;
         striker.runs += ball.runs;
-        if (ball.runs == 4) striker.fours += 1;
-        if (ball.runs == 6) striker.sixes += 1;
         break;
-
       case BallType.bye:
-        m.score[m.innings] += ball.runs;
-        m.extras[m.innings] += ball.runs;
-        bowler.oversBowled += 1;
-        m.balls[m.innings] += 1;
-        if (ball.runs % 2 != 0) _rotateStrike();
-        break;
-
       case BallType.legBye:
         m.score[m.innings] += ball.runs;
         m.extras[m.innings] += ball.runs;
@@ -119,10 +147,8 @@ class MatchProvider with ChangeNotifier {
         m.balls[m.innings] += 1;
         if (ball.runs % 2 != 0) _rotateStrike();
         break;
-
       case BallType.deadBall:
         break;
-
       case BallType.wicket:
         striker.balls += 1;
         striker.isOut = true;
@@ -138,20 +164,28 @@ class MatchProvider with ChangeNotifier {
     m.allBalls.add(ball);
     m.currentOverBalls.add(ball);
 
-    // Check over end
-    bool isLegalBall = ball.type != BallType.wide && ball.type != BallType.noBall;
-    if (isLegalBall) {
+    if (ball.type != BallType.wide && ball.type != BallType.noBall) {
       _checkOverEnd();
     }
 
     _checkInningsEnd();
+
+    if (_currentTournament != null) {
+      final index = _currentTournament!.schedule.indexWhere((sm) => sm.matchId == m.id);
+      if (index != -1) {
+        _currentTournament!.schedule[index].matchDetails = m;
+      }
+      _saveTournamentsToLocal();
+      // ☁️ Live scoring data sync to tournament node
+      FirebaseDatabase.instance.ref().child('tournaments').child(_currentTournament!.id).set(_currentTournament!.toMap());
+    }
+
     _saveLocalMatch();
-    // 🔥 FIREBASE: Live score update
-    _firebase.updateLiveScore(m);
     notifyListeners();
   }
 
   void _rotateStrike() {
+    if (_currentMatch == null) return;
     final m = _currentMatch!;
     final tmp = m.strikerIdx;
     m.strikerIdx = m.nonStrikerIdx;
@@ -159,29 +193,25 @@ class MatchProvider with ChangeNotifier {
   }
 
   void _checkOverEnd() {
+    if (_currentMatch == null) return;
     final m = _currentMatch!;
-    int legalBalls = m.currentOverBalls
-        .where((b) => b.type != BallType.wide && b.type != BallType.noBall)
-        .length;
-    if (legalBalls >= 6) {
+    int legalBalls = m.currentOverBalls.where((b) => b.type != BallType.wide && b.type != BallType.noBall).length;
+    if (legalBalls >= m.ballsPerOver) {
       m.currentOverBalls.clear();
       _rotateStrike();
     }
   }
 
   void _checkInningsEnd() {
+    if (_currentMatch == null) return;
     final m = _currentMatch!;
     bool allOut = m.currentWickets >= 10;
-    bool oversUp = m.currentBalls >= m.totalOvers * 6;
-    bool chaseWon = m.innings == 1 &&
-        m.target != null &&
-        m.currentScore >= m.target!;
+    bool oversUp = m.currentBalls >= (m.totalOvers * m.ballsPerOver);
+    bool chaseWon = m.innings == 1 && m.target != null && m.currentScore >= m.target!;
 
     if (chaseWon) {
       m.isFinished = true;
-      final winner = m.battingTeam.name;
-      final wicketsLeft = 10 - m.currentWickets;
-      m.result = '$winner won by $wicketsLeft wickets!';
+      m.result = '${m.battingTeam.name} won by ${10 - m.currentWickets} wickets!';
       _handleMatchFinishedComplete(m);
     } else if (allOut || oversUp) {
       if (m.innings == 0) {
@@ -190,6 +220,7 @@ class MatchProvider with ChangeNotifier {
         m.currentOverBalls.clear();
         m.strikerIdx = 0;
         m.nonStrikerIdx = 1;
+        showInningsBreakAnimation = true;
       } else {
         m.isFinished = true;
         final s1 = m.score[0];
@@ -206,176 +237,359 @@ class MatchProvider with ChangeNotifier {
     }
   }
 
-  // Helper trigger function to distribute data saving easily
+  void dismissInningsAnimation() {
+    showInningsBreakAnimation = false;
+    notifyListeners();
+  }
+
   void _handleMatchFinishedComplete(MatchModel completedMatch) {
-    _saveToHistory();
-
-    // Agar live match kisi tournament ka hissa hai, toh tournament flow bhi automatic finish karo
+    _saveToHistory(completedMatch);
     if (_currentTournament != null) {
-      final scheduleMatch = _currentTournament!.schedule.firstWhere(
-            (sm) => sm.matchNumber == completedMatch.tournamentMatchNumber,
-        orElse: () => TournamentMatch(team1Id: completedMatch.team1.id, team2Id: completedMatch.team2.id, matchNumber: 0),
-      );
-
-      if (scheduleMatch.matchNumber != 0) {
-        finishTournamentMatch(scheduleMatch.matchNumber, completedMatch);
-      }
+      finishTournamentMatch(completedMatch.id, completedMatch);
     }
   }
 
-  void setBatsman(int idx, {bool isStriker = true}) {
+  // ===========================================================
+  // 🔥 STRIKER / NON-STRIKER CHANGE LOGIC
+  // ===========================================================
+  void setBatsman(int playerIndex, bool isStriker) {
     if (_currentMatch == null) return;
+
     if (isStriker) {
-      _currentMatch!.strikerIdx = idx;
+      _currentMatch!.strikerIdx = playerIndex;
     } else {
-      _currentMatch!.nonStrikerIdx = idx;
+      _currentMatch!.nonStrikerIdx = playerIndex;
     }
-    notifyListeners();
-  }
 
-  void setBowler(int idx) {
-    if (_currentMatch == null) return;
-    _currentMatch!.bowlerIdx = idx;
-    notifyListeners();
-  }
-
-  void undoLastBall() {
-    if (_currentMatch == null || _currentMatch!.allBalls.isEmpty) return;
-    _currentMatch!.allBalls.removeLast();
+    // Live State Save aur Cloud Sync
+    _saveLocalMatch();
+    if (_currentMatch!.tournamentId != null && _currentTournament != null) {
+      final index = _currentTournament!.schedule.indexWhere((sm) => sm.matchId == _currentMatch!.id);
+      if (index != -1) {
+        _currentTournament!.schedule[index].matchDetails = _currentMatch;
+      }
+      _saveTournamentsToLocal();
+      // ☁️ Firebase Sync for live index change
+      FirebaseDatabase.instance.ref().child('tournaments').child(_currentTournament!.id).set(_currentTournament!.toMap());
+    }
     notifyListeners();
   }
 
   // ===========================================================
-  // Tournament Logic Additions
+  // 🔥 BOWLER CHANGE LOGIC
+  // ===========================================================
+  void setBowler(int playerIndex) {
+    if (_currentMatch == null) return;
+
+    _currentMatch!.bowlerIdx = playerIndex;
+
+    // Live State Save aur Cloud Sync
+    _saveLocalMatch();
+    if (_currentMatch!.tournamentId != null && _currentTournament != null) {
+      final index = _currentTournament!.schedule.indexWhere((sm) => sm.matchId == _currentMatch!.id);
+      if (index != -1) {
+        _currentTournament!.schedule[index].matchDetails = _currentMatch;
+      }
+      _saveTournamentsToLocal();
+      // ☁️ Firebase Sync for live index change
+      FirebaseDatabase.instance.ref().child('tournaments').child(_currentTournament!.id).set(_currentTournament!.toMap());
+    }
+    notifyListeners();
+  }
+
+  // ===========================================================
+  // 🔥 UNDO LAST BALL LOGIC (Mukammal Reversal)
+  // ===========================================================
+  void undoLastBall() {
+    if (_currentMatch == null || _currentMatch!.allBalls.isEmpty) return;
+
+    final m = _currentMatch!;
+    // Aakhri ball nikalen
+    final lastBall = m.allBalls.removeLast();
+
+    // Current over list se bhi nikalen agar over abhi chal raha tha
+    if (m.currentOverBalls.isNotEmpty) {
+      m.currentOverBalls.removeLast();
+    }
+
+    final bt = m.battingTeam;
+    final bwt = m.bowlingTeam;
+    final striker = bt.players[m.strikerIdx];
+    final bowler = bwt.players[m.bowlerIdx];
+
+    // Stats ko wapas reverse (minus) karein
+    switch (lastBall.type) {
+      case BallType.normal:
+        striker.runs -= lastBall.runs;
+        striker.balls -= 1;
+        if (lastBall.runs == 4) striker.fours -= 1;
+        if (lastBall.runs == 6) striker.sixes -= 1;
+        bowler.runsGiven -= lastBall.runs;
+        bowler.oversBowled -= 1;
+        m.score[m.innings] -= lastBall.runs;
+        m.balls[m.innings] -= 1;
+        if (lastBall.runs % 2 != 0) _rotateStrike();
+        break;
+
+      case BallType.wide:
+        m.score[m.innings] -= 1;
+        m.extras[m.innings] -= 1;
+        bowler.runsGiven -= 1;
+        bowler.wides -= 1;
+        break;
+
+      case BallType.noBall:
+        m.score[m.innings] -= (1 + lastBall.runs);
+        m.extras[m.innings] -= 1;
+        bowler.runsGiven -= (1 + lastBall.runs);
+        bowler.noBalls -= 1;
+        striker.balls -= 1;
+        striker.runs -= lastBall.runs;
+        break;
+
+      case BallType.bye:
+      case BallType.legBye:
+        m.score[m.innings] -= lastBall.runs;
+        m.extras[m.innings] -= lastBall.runs;
+        bowler.oversBowled -= 1;
+        m.balls[m.innings] -= 1;
+        if (lastBall.runs % 2 != 0) _rotateStrike();
+        break;
+
+      case BallType.deadBall:
+        break;
+
+      case BallType.wicket:
+        striker.balls -= 1;
+        striker.isOut = false;
+        striker.outMode = "";
+        if (lastBall.wicketMode != 'Run Out') bowler.wicketsTaken -= 1;
+        bowler.oversBowled -= 1;
+        m.wickets[m.innings] -= 1;
+        m.balls[m.innings] -= 1;
+        m.score[m.innings] -= lastBall.runs;
+        break;
+    }
+
+    // Schedule update aur Local storage sync
+    if (_currentTournament != null) {
+      final index = _currentTournament!.schedule.indexWhere((sm) => sm.matchId == m.id);
+      if (index != -1) {
+        _currentTournament!.schedule[index].matchDetails = m;
+      }
+      _saveTournamentsToLocal();
+      // ☁️ Firebase Sync for Undo Operation
+      FirebaseDatabase.instance.ref().child('tournaments').child(_currentTournament!.id).set(_currentTournament!.toMap());
+    }
+
+    _saveLocalMatch();
+    notifyListeners();
+  }
+
+  // ===========================================================
+  // Tournament Operations (Local + Firebase Sync)
   // ===========================================================
 
   void createTournament(TournamentModel tournament) {
     _currentTournament = tournament;
-    _firebase.saveTournament(tournament);
+    if (!_tournaments.any((t) => t.id == tournament.id)) {
+      _tournaments.insert(0, tournament);
+    }
+    _saveTournamentsToLocal();
+
+    // ☁️ Direct Firebase Sync
+    FirebaseDatabase.instance.ref().child('tournaments').child(tournament.id).set(tournament.toMap());
     notifyListeners();
   }
 
-  // 🔥 TOURNAMENT NEW FEATURE: Match khatam hone par history save karna aur Points Table automatic update karna
-  void finishTournamentMatch(int matchNum, MatchModel finalMatchData) {
-    if (_currentTournament == null) return;
+  void updateTournamentName(String tournamentId, String newName) {
+    final index = _tournaments.indexWhere((t) => t.id == tournamentId);
+    if (index != -1) {
+      _tournaments[index].name = newName;
+      if (_currentTournament?.id == tournamentId) {
+        _currentTournament!.name = newName;
+      }
+      _saveTournamentsToLocal();
 
+      // ☁️ Cloud updates
+      FirebaseDatabase.instance.ref().child('tournaments').child(tournamentId).update({
+        'name': newName,
+      });
+      notifyListeners();
+    }
+  }
+
+  void deleteTournament(String tournamentId) {
+    _tournaments.removeWhere((t) => t.id == tournamentId);
+    if (_currentTournament?.id == tournamentId) {
+      _currentTournament = _tournaments.isNotEmpty ? _tournaments.first : null;
+    }
+    _saveTournamentsToLocal();
+
+    // ☁️ Cloud delete
+    FirebaseDatabase.instance.ref().child('tournaments').child(tournamentId).remove();
+    notifyListeners();
+  }
+
+  void finishTournamentMatch(String matchId, MatchModel finalMatchData) {
+    if (_currentTournament == null) return;
     final tournament = _currentTournament!;
 
-    // 1. Schedule update karein status 'Done' karne ke liye
     for (var m in tournament.schedule) {
-      if (m.matchNumber == matchNum) {
-        // Find winner ID dynamically
+      if (m.matchId == matchId) {
         String? winnerId;
         final s1 = finalMatchData.score[0];
         final s2 = finalMatchData.score[1];
 
-        if (s1 > s2) {
-          winnerId = finalMatchData.team1.id;
-        } else if (s2 > s1) {
-          winnerId = finalMatchData.team2.id;
-        }
+        if (s1 > s2) winnerId = finalMatchData.team1.id;
+        if (s2 > s1) winnerId = finalMatchData.team2.id;
 
         m.winnerId = winnerId;
-        // Map direct complete match history injection
-        m.setMatchModelData(finalMatchData);
+        m.result = finalMatchData.result;
+        m.matchStatus = 'completed';
+        m.matchDetails = finalMatchData;
         break;
       }
     }
 
-    // 2. Points Table calculation refresh karein automatically
+    // Points Table Calculation
     final newPointsTable = <String, Map<String, int>>{};
-
-    // Initialize blank tables for all registered teams
     for (var team in tournament.teams) {
       newPointsTable[team.id] = {'played': 0, 'won': 0, 'lost': 0, 'points': 0};
     }
 
-    // Loop match records and distribute structural points logic
     for (var m in tournament.schedule) {
-      if (m.winnerId != null) {
+      if (m.matchStatus == 'completed' && m.winnerId != null) {
         final t1 = m.team1Id;
         final t2 = m.team2Id;
         final win = m.winnerId!;
         final lose = win == t1 ? t2 : t1;
 
-        // Played increments
         newPointsTable[t1]?['played'] = (newPointsTable[t1]?['played'] ?? 0) + 1;
         newPointsTable[t2]?['played'] = (newPointsTable[t2]?['played'] ?? 0) + 1;
-
-        // Won / Lost logic injection
         newPointsTable[win]?['won'] = (newPointsTable[win]?['won'] ?? 0) + 1;
-        newPointsTable[win]?['points'] = (newPointsTable[win]?['points'] ?? 0) + 2; // 2 points for a win
-
+        newPointsTable[win]?['points'] = (newPointsTable[win]?['points'] ?? 0) + 2;
         newPointsTable[lose]?['lost'] = (newPointsTable[lose]?['lost'] ?? 0) + 1;
       }
     }
 
-    // Apply calculated metrics to our existing active tournament dashboard
     tournament.pointsTable.clear();
     tournament.pointsTable.addAll(newPointsTable);
-    // 🔥 Firebase update save push
-    _firebase.saveTournament(tournament);
+
+    final tIdx = _tournaments.indexWhere((t) => t.id == tournament.id);
+    if (tIdx != -1) {
+      _tournaments[tIdx] = tournament;
+    }
+
+    _saveTournamentsToLocal();
+
+    // ☁️ Cloud sync full updated state
+    FirebaseDatabase.instance.ref().child('tournaments').child(tournament.id).set(tournament.toMap());
     notifyListeners();
   }
 
   // ===========================================================
-  // History & Local Storage
+  // 💾 Storage Management (Local Storage + Cloud Recovery)
   // ===========================================================
 
   Future<void> _saveLocalMatch() async {
     try {
       final prefs = await SharedPreferences.getInstance();
       if (_currentMatch != null) {
-        prefs.setString('current_match', jsonEncode(_currentMatch!.toMap()));
+        await prefs.setString('current_match', jsonEncode(_currentMatch!.toMap()));
+      } else {
+        await prefs.remove('current_match');
       }
-    } catch (e) {
-      debugPrint('Save error: $e');
-    }
+    } catch (_) {}
   }
 
-  Future<void> _saveToHistory() async {
-    if (_currentMatch == null) return;
+  Future<void> _saveToHistory(MatchModel completedMatch) async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      final histJson = prefs.getString('match_history') ?? '[]';
-      final hist = List<Map<String, dynamic>>.from(jsonDecode(histJson));
-      hist.insert(0, _currentMatch!.toMap());
-      prefs.setString('match_history', jsonEncode(hist.take(50).toList()));
-      _matchHistory = hist;
-    } catch (e) {
-      debugPrint('History save error: $e');
-    }
+      if (!_matchHistory.any((m) => m.id == completedMatch.id)) {
+        _matchHistory.insert(0, completedMatch);
+      }
+      final list = _matchHistory.map((m) => m.toMap()).toList();
+      await prefs.setString('match_history', jsonEncode(list.take(50).toList()));
+
+      // Cloud database history sync
+      FirebaseDatabase.instance.ref().child('matches').child(completedMatch.id).set(completedMatch.toMap());
+    } catch (_) {}
   }
 
-  Future<void> loadHistory() async {
+  Future<void> _saveTournamentsToLocal() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      final histJson = prefs.getString('match_history') ?? '[]';
-      _matchHistory = List<Map<String, dynamic>>.from(jsonDecode(histJson));
+      final list = _tournaments.map((t) => t.toMap()).toList();
+      await prefs.setString('local_tournaments', jsonEncode(list));
+
+      if (_currentTournament != null) {
+        await prefs.setString('current_tournament_id', _currentTournament!.id);
+      } else {
+        await prefs.remove('current_tournament_id');
+      }
+    } catch (_) {}
+  }
+
+  Future<void> loadAllSavedData() async {
+    _isLoading = true;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+
+      // 1. First read local cache for rapid load
+      final tourJson = prefs.getString('local_tournaments');
+      if (tourJson != null && tourJson.isNotEmpty) {
+        final List<dynamic> decodedTour = jsonDecode(tourJson);
+        _tournaments = decodedTour.map((item) => TournamentModel.fromMap(item)).toList();
+      }
+
+      // 2. ☁️ Live Cloud Fetch (Realtime database over-rides local cache if internet available)
+      final snapshot = await FirebaseDatabase.instance.ref().child('tournaments').get();
+      if (snapshot.exists && snapshot.value != null) {
+        final Map<dynamic, dynamic> cloudData = snapshot.value as Map<dynamic, dynamic>;
+        List<TournamentModel> tempTournaments = [];
+
+        cloudData.forEach((key, value) {
+          final Map<String, dynamic> tourMap = Map<String, dynamic>.from(value as Map);
+          tempTournaments.add(TournamentModel.fromMap(tourMap));
+        });
+
+        _tournaments = tempTournaments.reversed.toList();
+        // Sync back to local storage
+        final list = _tournaments.map((t) => t.toMap()).toList();
+        await prefs.setString('local_tournaments', jsonEncode(list));
+      }
+
+      // 3. Restore History & Match States
+      final histJson = prefs.getString('match_history');
+      if (histJson != null && histJson.isNotEmpty) {
+        final List<dynamic> decodedHist = jsonDecode(histJson);
+        _matchHistory = decodedHist.map((item) => MatchModel.fromMap(item)).toList();
+      }
+
+      final activeTourId = prefs.getString('current_tournament_id');
+      if (activeTourId != null && _tournaments.isNotEmpty) {
+        _currentTournament = _tournaments.firstWhere((t) => t.id == activeTourId, orElse: () => _tournaments.first);
+      } else if (_tournaments.isNotEmpty) {
+        _currentTournament = _tournaments.first;
+      }
+
+      final currentMatchJson = prefs.getString('current_match');
+      if (currentMatchJson != null && currentMatchJson.isNotEmpty) {
+        _currentMatch = MatchModel.fromMap(jsonDecode(currentMatchJson));
+      }
+
+    } catch (e) {
+      print("Data sync error: $e");
+    } finally {
+      _isLoading = false;
       notifyListeners();
-    } catch (e) {
-      debugPrint('History load error: $e');
     }
   }
 
   void endCurrentMatch() {
     _currentMatch = null;
+    _saveLocalMatch();
     notifyListeners();
   }
-}
-
-// Global safe mapping fallback bridge for loading match configurations
-extension SafeTournamentMatchNumber on MatchModel {
-  int get tournamentMatchNumber {
-    // Falls back safely if the match data isn't configured within tournament metadata directly
-    return 1;
-  }
-}
-
-// Setup extensions injection for local temporary storage data linking
-extension on TournamentMatch {
-  static final _matchDataRecords = Expando<MatchModel>();
-
-  MatchModel? get matchModelData => _matchDataRecords[this];
-  void setMatchModelData(MatchModel data) => _matchDataRecords[this] = data;
 }

@@ -4,6 +4,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import '../providers/match_provider.dart';
 import '../theme/app_theme.dart';
+import '../models/models.dart'; // 🔥 MatchModel use karne ke liye models file import ki
 import 'match_setup_screen.dart';
 import 'tournament_screen.dart';
 import 'history_screen.dart';
@@ -23,9 +24,6 @@ class _DashboardScreenState extends State<DashboardScreen>
 
   final List<Widget> _pages = const [
     _HomeTab(),
-    _NewMatchTab(),
-    _TournamentTabPlaceholder(),
-    _HistoryTabPlaceholder(),
   ];
 
   @override
@@ -36,7 +34,6 @@ class _DashboardScreenState extends State<DashboardScreen>
       duration: const Duration(milliseconds: 300),
     );
     _fabController.forward();
-    // Load history on start
     WidgetsBinding.instance.addPostFrameCallback((_) {
       context.read<MatchProvider>().loadHistory();
     });
@@ -54,7 +51,7 @@ class _DashboardScreenState extends State<DashboardScreen>
       backgroundColor: AppTheme.darkBg,
       body: AnimatedSwitcher(
         duration: const Duration(milliseconds: 300),
-        child: _pages[_currentIndex],
+        child: _currentIndex == 0 ? _pages[0] : const _HomeTab(),
       ),
       bottomNavigationBar: _buildBottomNav(),
     );
@@ -91,16 +88,22 @@ class _DashboardScreenState extends State<DashboardScreen>
                 icon: Icons.add_circle_outline_rounded,
                 label: 'Naya Match',
                 isActive: _currentIndex == 1,
-                onTap: () => setState(() => _currentIndex = 1),
+                onTap: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => const MatchSetupScreen()),
+                  ).then((_) => setState(() => _currentIndex = 0));
+                },
               ),
               _NavItem(
                 icon: Icons.emoji_events_rounded,
                 label: 'Tournament',
                 isActive: _currentIndex == 2,
                 onTap: () {
-                  setState(() => _currentIndex = 2);
-                  Navigator.push(context,
-                    MaterialPageRoute(builder: (_) => const TournamentScreen()));
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => const TournamentScreen()),
+                  ).then((_) => setState(() => _currentIndex = 0));
                 },
               ),
               _NavItem(
@@ -108,9 +111,10 @@ class _DashboardScreenState extends State<DashboardScreen>
                 label: 'History',
                 isActive: _currentIndex == 3,
                 onTap: () {
-                  setState(() => _currentIndex = 3);
-                  Navigator.push(context,
-                    MaterialPageRoute(builder: (_) => const HistoryScreen()));
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => const HistoryScreen()),
+                  ).then((_) => setState(() => _currentIndex = 0));
                 },
               ),
             ],
@@ -163,7 +167,6 @@ class _HomeTab extends StatelessWidget {
                         ),
                       ),
                       const Spacer(),
-                      // 🔥 FIREBASE: User profile icon
                       Container(
                         padding: const EdgeInsets.all(8),
                         decoration: BoxDecoration(
@@ -192,37 +195,19 @@ class _HomeTab extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Active match card
                   if (provider.hasActiveMatch) ...[
                     _ActiveMatchCard(match: provider.currentMatch!),
                     const SizedBox(height: 16),
                   ],
 
-                  // Quick stats
                   _SectionTitle(title: 'Quick Stats'),
                   const SizedBox(height: 12),
                   _StatsGrid(matchHistory: provider.matchHistory),
                   const SizedBox(height: 20),
 
-                  // Quick actions
                   _SectionTitle(title: 'Quick Actions'),
                   const SizedBox(height: 12),
                   _QuickActionsGrid(),
-                  const SizedBox(height: 20),
-
-                  // Recent matches
-                  _SectionTitle(title: 'Recent Matches'),
-                  const SizedBox(height: 12),
-                  if (provider.matchHistory.isEmpty)
-                    _EmptyState(
-                      icon: Icons.sports_cricket_rounded,
-                      message: 'Koi match nahi hua abhi tak',
-                      subtitle: '"Naya Match" se pehla match shuru karein',
-                    )
-                  else
-                    ...provider.matchHistory.take(3).map((m) =>
-                      _RecentMatchCard(matchData: m)),
-
                   const SizedBox(height: 20),
                 ],
               ),
@@ -290,11 +275,11 @@ class _ActiveMatchCard extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
                     Text(match.oversDisplay,
-                      style: GoogleFonts.poppins(fontSize: 18,
-                          fontWeight: FontWeight.w700, color: Colors.white)),
+                        style: GoogleFonts.poppins(fontSize: 18,
+                            fontWeight: FontWeight.w700, color: Colors.white)),
                     Text('CRR: ${match.currentRunRate.toStringAsFixed(2)}',
-                      style: GoogleFonts.poppins(fontSize: 13,
-                          color: const Color(0xFF81C784))),
+                        style: GoogleFonts.poppins(fontSize: 13,
+                            color: const Color(0xFF81C784))),
                   ],
                 ),
               ],
@@ -305,7 +290,7 @@ class _ActiveMatchCard extends StatelessWidget {
                 const Icon(Icons.touch_app, size: 14, color: Color(0xFF81C784)),
                 const SizedBox(width: 4),
                 Text('Score update karne ke liye tap karein',
-                  style: GoogleFonts.poppins(fontSize: 12, color: const Color(0xFF81C784))),
+                    style: GoogleFonts.poppins(fontSize: 12, color: const Color(0xFF81C784))),
               ],
             ),
           ],
@@ -315,8 +300,11 @@ class _ActiveMatchCard extends StatelessWidget {
   }
 }
 
+// ============================================================
+// 🔥 FIXED WIDGET (List<Map> se hata kar List<MatchModel> kiya)
+// ============================================================
 class _StatsGrid extends StatelessWidget {
-  final List<Map<String, dynamic>> matchHistory;
+  final List<MatchModel> matchHistory; // 👈 Map ki jagah sahi type likh diya
   const _StatsGrid({required this.matchHistory});
 
   @override
@@ -372,9 +360,9 @@ class _StatCard extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(value, style: GoogleFonts.poppins(
-                fontSize: 22, fontWeight: FontWeight.w800, color: Colors.white)),
+                  fontSize: 22, fontWeight: FontWeight.w800, color: Colors.white)),
               Text(label, style: GoogleFonts.poppins(
-                fontSize: 11, color: const Color(0xFF6B8FA6))),
+                  fontSize: 11, color: const Color(0xFF6B8FA6))),
             ],
           ),
         ],
@@ -388,13 +376,13 @@ class _QuickActionsGrid extends StatelessWidget {
   Widget build(BuildContext context) {
     final actions = [
       _QuickAction('Naya Match', Icons.add_circle_outline, const Color(0xFF2E7D32),
-          () => Navigator.push(context, MaterialPageRoute(builder: (_) => const MatchSetupScreen()))),
+              () => Navigator.push(context, MaterialPageRoute(builder: (_) => const MatchSetupScreen()))),
       _QuickAction('Tournament', Icons.emoji_events_outlined, const Color(0xFF1565C0),
-          () => Navigator.push(context, MaterialPageRoute(builder: (_) => const TournamentScreen()))),
+              () => Navigator.push(context, MaterialPageRoute(builder: (_) => const TournamentScreen()))),
       _QuickAction('History', Icons.history_rounded, const Color(0xFF6A1B9A),
-          () => Navigator.push(context, MaterialPageRoute(builder: (_) => const HistoryScreen()))),
+              () => Navigator.push(context, MaterialPageRoute(builder: (_) => const HistoryScreen()))),
       _QuickAction('Settings', Icons.settings_outlined, const Color(0xFF37474F),
-          () => _showSettings(context)),
+              () => _showSettings(context)),
     ];
 
     return GridView.count(
@@ -418,7 +406,7 @@ class _QuickActionsGrid extends StatelessWidget {
               Icon(a.icon, color: a.color, size: 22),
               const SizedBox(width: 8),
               Text(a.label, style: GoogleFonts.poppins(
-                fontSize: 13, fontWeight: FontWeight.w600, color: Colors.white)),
+                  fontSize: 13, fontWeight: FontWeight.w600, color: Colors.white)),
             ],
           ),
         ),
@@ -457,16 +445,15 @@ class _SettingsSheet extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           Text('Settings', style: GoogleFonts.poppins(
-            fontSize: 18, fontWeight: FontWeight.w700, color: Colors.white)),
+              fontSize: 18, fontWeight: FontWeight.w700, color: Colors.white)),
           const SizedBox(height: 16),
-          // 🔥 FIREBASE: Settings mein Firebase sync toggle
           _SettingsTile(icon: Icons.cloud_sync, label: 'Firebase Sync',
               subtitle: '🔥 Firebase setup karne ke baad active hoga',
               trailing: const Icon(Icons.toggle_off, color: Colors.grey, size: 32)),
           _SettingsTile(icon: Icons.notifications, label: 'Notifications', trailing:
-              const Icon(Icons.toggle_on, color: Color(0xFF4CAF50), size: 32)),
+          const Icon(Icons.toggle_on, color: Color(0xFF4CAF50), size: 32)),
           _SettingsTile(icon: Icons.dark_mode, label: 'Dark Mode', trailing:
-              const Icon(Icons.toggle_on, color: Color(0xFF4CAF50), size: 32)),
+          const Icon(Icons.toggle_on, color: Color(0xFF4CAF50), size: 32)),
           const SizedBox(height: 20),
         ],
       ),
@@ -488,45 +475,8 @@ class _SettingsTile extends StatelessWidget {
       leading: Icon(icon, color: const Color(0xFF4CAF50)),
       title: Text(label, style: GoogleFonts.poppins(color: Colors.white, fontSize: 14)),
       subtitle: subtitle != null ? Text(subtitle!, style: GoogleFonts.poppins(
-        color: const Color(0xFF6B8FA6), fontSize: 11)) : null,
+          color: const Color(0xFF6B8FA6), fontSize: 11)) : null,
       trailing: trailing,
-    );
-  }
-}
-
-class _RecentMatchCard extends StatelessWidget {
-  final Map<String, dynamic> matchData;
-  const _RecentMatchCard({required this.matchData});
-
-  @override
-  Widget build(BuildContext context) {                          //  Errrorrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr
-    return Container(
-      margin: const EdgeInsets.only(bottom: 10),
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: AppTheme.cardBg,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AppTheme.cardBorder, width: 0.5),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Text('${matchData['team1']?['name'] ?? 'Team 1'} vs ${matchData['team2']?['name'] ?? 'Team 2'}',
-                style: GoogleFonts.poppins(fontSize: 14, fontWeight: FontWeight.w700, color: Colors.white)),
-              const Spacer(),
-              Text(matchData['isFinished'] == true ? 'Khatam' : 'Chal raha hai',
-                style: GoogleFonts.poppins(fontSize: 11,
-                  color: matchData['isFinished'] == true
-                      ? const Color(0xFF6B8FA6) : Colors.red)),
-            ],
-          ),
-          const SizedBox(height: 6),
-          Text(matchData['result'] ?? '', style: GoogleFonts.poppins(
-            fontSize: 12, color: const Color(0xFF4CAF50))),
-        ],
-      ),
     );
   }
 }
@@ -540,71 +490,14 @@ class _SectionTitle extends StatelessWidget {
     return Row(
       children: [
         Container(width: 3, height: 18, color: const Color(0xFF4CAF50),
-          margin: const EdgeInsets.only(right: 8)),
+            margin: const EdgeInsets.only(right: 8)),
         Text(title, style: GoogleFonts.poppins(
-          fontSize: 16, fontWeight: FontWeight.w700, color: Colors.white)),
+            fontSize: 16, fontWeight: FontWeight.w700, color: Colors.white)),
       ],
     );
   }
 }
 
-class _EmptyState extends StatelessWidget {
-  final IconData icon;
-  final String message;
-  final String subtitle;
-  const _EmptyState({required this.icon, required this.message, required this.subtitle});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(30),
-      decoration: BoxDecoration(
-        color: AppTheme.cardBg,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: AppTheme.cardBorder),
-      ),
-      child: Column(
-        children: [
-          Icon(icon, color: const Color(0xFF6B8FA6), size: 48),
-          const SizedBox(height: 12),
-          Text(message, style: GoogleFonts.poppins(
-            fontSize: 15, fontWeight: FontWeight.w600, color: Colors.white)),
-          const SizedBox(height: 4),
-          Text(subtitle, style: GoogleFonts.poppins(
-            fontSize: 12, color: const Color(0xFF6B8FA6)), textAlign: TextAlign.center),
-        ],
-      ),
-    );
-  }
-}
-
-// Placeholder tabs for bottom nav (navigate directly)
-class _NewMatchTab extends StatelessWidget {
-  const _NewMatchTab();
-
-  @override
-  Widget build(BuildContext context) {
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      Navigator.push(context,
-          MaterialPageRoute(builder: (_) => const MatchSetupScreen()));
-    });
-    return const Scaffold(backgroundColor: Color(0xFF0A1628));
-  }
-}
-
-class _TournamentTabPlaceholder extends StatelessWidget {
-  const _TournamentTabPlaceholder();
-  @override
-  Widget build(BuildContext context) => const Scaffold(backgroundColor: Color(0xFF0A1628));
-}
-
-class _HistoryTabPlaceholder extends StatelessWidget {
-  const _HistoryTabPlaceholder();
-  @override
-  Widget build(BuildContext context) => const Scaffold(backgroundColor: Color(0xFF0A1628));
-}
-
-// NavItem widget
 class _NavItem extends StatelessWidget {
   final IconData icon;
   final String label;

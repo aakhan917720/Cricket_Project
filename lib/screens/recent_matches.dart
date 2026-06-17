@@ -14,7 +14,7 @@ class RecentMatchesScreen extends StatelessWidget {
 
     // Fixed warning: dynamic list casting cleaned up properly
     final List<MatchModel> recentMatches = historyRaw
-        .map((m) => MatchModel.fromMap(Map<String, dynamic>.from(m)))
+        .map((m) => MatchModel.fromMap(Map<String, dynamic>.from(m as Map<dynamic, dynamic>)))
         .toList();
 
     return Scaffold(

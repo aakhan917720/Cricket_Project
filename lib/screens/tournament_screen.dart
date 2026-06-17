@@ -3,66 +3,61 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import 'package:uuid/uuid.dart';
+import 'package:intl/intl.dart'; // Date formating ke liye add kiya gaya hai
 import '../models/models.dart';
 import '../providers/match_provider.dart';
 import '../theme/app_theme.dart';
 import '../services/firebase_service.dart';
-import 'match_history_detail_screen.dart'; // 🔥 Fix import for viewing completed matches
+import 'match_history_detail_screen.dart';
+import 'scoring_screen.dart';
 
-class TournamentScreen extends StatefulWidget {
+class TournamentScreen extends StatelessWidget {
   const TournamentScreen({super.key});
 
   @override
-  State<TournamentScreen> createState() => _TournamentScreenState();
-}
-
-class _TournamentScreenState extends State<TournamentScreen>
-    with SingleTickerProviderStateMixin {
-  late TabController _tabController;
-
-  @override
-  void initState() {
-    super.initState();
-    _tabController = TabController(length: 2, vsync: this);
-  }
-
-  @override
-  void dispose() {
-    _tabController.dispose();
-    super.dispose();
-  }
-
-  @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: AppTheme.darkBg,
-      appBar: AppBar(
-        backgroundColor: AppTheme.cardBg,
-        title: Text('🏆 Tournament Dashboard', style: GoogleFonts.poppins(fontWeight: FontWeight.w600)),
-        bottom: TabBar(
-          controller: _tabController,
-          indicatorColor: AppTheme.accentGreen,
-          labelColor: AppTheme.accentGreen,
-          unselectedLabelColor: const Color(0xFF6B8FA6),
-          tabs: const [Tab(text: 'Naya Tournament'), Tab(text: 'Active Tournament')],
+    return DefaultTabController(
+      length: 2,
+      child: Scaffold(
+        backgroundColor: AppTheme.darkBg,
+        appBar: AppBar(
+          elevation: 0,
+          backgroundColor: AppTheme.cardBg,
+          title: Text(
+            '🏆 Tournament Dashboard',
+            style: GoogleFonts.poppins(fontWeight: FontWeight.w600, color: Colors.white),
+          ),
+          bottom: TabBar(
+            indicatorColor: AppTheme.accentGreen,
+            labelColor: AppTheme.accentGreen,
+            unselectedLabelColor: const Color(0xFF6B8FA6),
+            indicatorSize: TabBarIndicatorSize.tab,
+            tabs: const [
+              Tab(text: 'Naya Tournament'),
+              Tab(text: 'Active Tournament'),
+            ],
+          ),
         ),
-      ),
-      body: TabBarView(
-        controller: _tabController,
-        children: [
-          const _CreateTournamentTab(),
-          const _ActiveTournamentTab(),
-        ],
+        body: TabBarView(
+          children: [
+            Builder(
+              builder: (context) => _CreateTournamentTab(
+                onSuccess: () {
+                  DefaultTabController.of(context).animateTo(1);
+                },
+              ),
+            ),
+            const _ActiveTournamentTab(),
+          ],
+        ),
       ),
     );
   }
 }
 
-// ============================================================
-// Create Tournament Tab
-// ============================================================
 class _CreateTournamentTab extends StatefulWidget {
-  const _CreateTournamentTab();
+  final VoidCallback onSuccess;
+  const _CreateTournamentTab({required this.onSuccess});
 
   @override
   State<_CreateTournamentTab> createState() => _CreateTournamentTabState();
@@ -71,10 +66,14 @@ class _CreateTournamentTab extends StatefulWidget {
 class _CreateTournamentTabState extends State<_CreateTournamentTab> {
   final _nameCtrl = TextEditingController(text: 'Cricket League 2026');
   int _totalTeams = 4;
-  int _totalMatches = 10;
+  int _totalMatches = 6;
   int _overs = 20;
-  TournamentFormat _format = TournamentFormat.roundRobin;
+  int _ballsPerOver = 6;
   final List<TextEditingController> _teamNames = [];
+
+  // 🔥 Har match ke liye user selected dates track karne ki list
+  final List<DateTime> _matchDates = [];
+
   bool _isCreating = false;
   final _uuid = const Uuid();
 
@@ -88,66 +87,113 @@ class _CreateTournamentTabState extends State<_CreateTournamentTab> {
     setState(() {
       _totalTeams = count;
       _teamNames.clear();
+      _matchDates.clear();
+
       for (int i = 0; i < count; i++) {
         _teamNames.add(TextEditingController(text: 'Team ${i + 1}'));
+      }
+
+      _totalMatches = (count * (count - 1)) ~/ 2;
+      // Default dates fill kar rahe hain (Aj ki date + dynamic additions)
+      for (int i = 0; i < _totalMatches; i++) {
+        _matchDates.add(DateTime.now().add(Duration(days: i)));
       }
     });
   }
 
+  // 🔥 User se dynamic Date aur Time picker input lene ka function
+  Future<void> _selectMatchDateTime(int index) async {
+    final DateTime? pickedDate = await showDatePicker(
+      context: context,
+      initialDate: _matchDates[index],
+      firstDate: DateTime.now(),
+      lastDate: DateTime(2030),
+    );
+
+    if (pickedDate != null && mounted) {
+      final TimeOfDay? pickedTime = await showTimePicker(
+        context: context,
+        initialTime: TimeOfDay.fromDateTime(_matchDates[index]),
+      );
+
+      if (pickedTime != null) {
+        setState(() {
+          _matchDates[index] = DateTime(
+            pickedDate.year,
+            pickedDate.month,
+            pickedDate.day,
+            pickedTime.hour,
+            pickedTime.minute,
+          );
+        });
+      }
+    }
+  }
+
   Future<void> _createTournament() async {
-    if (_nameCtrl.text.isEmpty) return;
+    if (_nameCtrl.text.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Pehle tournament ka naam likhein!', style: GoogleFonts.poppins())),
+      );
+      return;
+    }
+
     setState(() => _isCreating = true);
 
     final teams = _teamNames.map((ctrl) => TeamModel(
       id: _uuid.v4(),
-      name: ctrl.text,
+      name: ctrl.text.trim().isEmpty ? 'Team ${_teamNames.indexOf(ctrl) + 1}' : ctrl.text.trim(),
+      players: [],
     )).toList();
 
-    final schedule = _generateSchedule(teams);
+    final schedule = <TournamentMatch>[];
+    int mNum = 0;
+
+    for (int i = 0; i < teams.length; i++) {
+      for (int j = i + 1; j < teams.length; j++) {
+        schedule.add(TournamentMatch(
+          matchId: 'M-${DateTime.now().millisecondsSinceEpoch}-$mNum',
+          team1Id: teams[i].id,
+          team2Id: teams[j].id,
+          matchNumber: mNum + 1,
+          scheduleDateTime: _matchDates[mNum], // Custom date integrate ho gayi
+          matchStatus: 'scheduled',
+        ));
+        mNum++;
+      }
+    }
 
     final tournament = TournamentModel(
       id: _uuid.v4(),
-      name: _nameCtrl.text,
+      name: _nameCtrl.text.trim(),
       teams: teams,
-      totalMatches: _totalMatches,
+      totalMatches: schedule.length,
       overs: _overs,
-      format: _format,
+      ballsPerOver: _ballsPerOver,
       schedule: schedule,
     );
 
-    await FirebaseService().saveTournament(tournament);
-    if (mounted) {
-      context.read<MatchProvider>().createTournament(tournament);
-    }
-
-    setState(() => _isCreating = false);
-
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('🏆 ${tournament.name} create ho gaya!',
-              style: GoogleFonts.poppins()),
-          backgroundColor: AppTheme.lightGreen,
-        ),
-      );
-    }
-  }
-
-  List<TournamentMatch> _generateSchedule(List<TeamModel> teams) {
-    final matches = <TournamentMatch>[];
-    int matchNum = 1;
-
-    // Generates scale matches up to 200 safely
-    for (int i = 0; i < teams.length && matchNum <= _totalMatches; i++) {
-      for (int j = i + 1; j < teams.length && matchNum <= _totalMatches; j++) {
-        matches.add(TournamentMatch(
-          team1Id: teams[i].id,
-          team2Id: teams[j].id,
-          matchNumber: matchNum++,
-        ));
+    try {
+      await FirebaseService().saveTournament(tournament);
+      if (mounted) {
+        context.read<MatchProvider>().createTournament(tournament);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('🏆 ${tournament.name} successfully create ho gaya!', style: GoogleFonts.poppins()),
+            backgroundColor: AppTheme.lightGreen,
+          ),
+        );
+        widget.onSuccess();
       }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Firebase Error: $e'), backgroundColor: Colors.redAccent),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isCreating = false);
     }
-    return matches;
   }
 
   @override
@@ -170,35 +216,21 @@ class _CreateTournamentTabState extends State<_CreateTournamentTab> {
               style: const TextStyle(color: Colors.white),
               decoration: const InputDecoration(
                 hintText: 'Jaise: Premier Cricket League',
-                prefixIcon: Icon(Icons.emoji_events, color: Color(0xFFFFD700)),
+                enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: Colors.white24)),
+                focusedBorder: UnderlineInputBorder(borderSide: BorderSide(color: AppTheme.accentGreen)),
               ),
             ),
           ),
           const SizedBox(height: 14),
-
-          _TournCard(
-            title: '📋 Format',
-            child: Column(
-              children: TournamentFormat.values.map((f) => RadioListTile<TournamentFormat>(
-                value: f,
-                groupValue: _format,
-                activeColor: AppTheme.accentGreen,
-                title: Text(_formatName(f), style: GoogleFonts.poppins(color: Colors.white, fontSize: 14)),
-                subtitle: Text(_formatDesc(f), style: GoogleFonts.poppins(color: const Color(0xFF6B8FA6), fontSize: 11)),
-                onChanged: (v) => setState(() => _format = v!),
-              )).toList(),
-            ),
-          ),
-          const SizedBox(height: 14),
-
           _TournCard(
             title: '🏏 Overs (1-50)',
             child: Column(
               children: [
                 Row(
+                  mainAxisSize: MainAxisSize.max,
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    Text('$_overs', style: GoogleFonts.poppins(fontSize: 36, fontWeight: FontWeight.w900, color: AppTheme.accentGreen)),
+                    Text('$_overs', style: GoogleFonts.poppins(fontSize: 32, fontWeight: FontWeight.w900, color: AppTheme.accentGreen)),
                     const SizedBox(width: 8),
                     Text('overs', style: GoogleFonts.poppins(fontSize: 14, color: Colors.white70)),
                   ],
@@ -214,31 +246,29 @@ class _CreateTournamentTabState extends State<_CreateTournamentTab> {
             ),
           ),
           const SizedBox(height: 14),
-
           _TournCard(
-            title: '🎯 Total Matches (1-200)',
+            title: '⚾ Balls Per Over (1-6)',
             child: Column(
               children: [
                 Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    Text('$_totalMatches', style: GoogleFonts.poppins(fontSize: 36, fontWeight: FontWeight.w900, color: AppTheme.goldAccent)),
+                    Text('$_ballsPerOver', style: GoogleFonts.poppins(fontSize: 32, fontWeight: FontWeight.w900, color: AppTheme.goldAccent)),
                     const SizedBox(width: 8),
-                    Text('matches', style: GoogleFonts.poppins(fontSize: 14, color: Colors.white70)),
+                    Text('balls', style: GoogleFonts.poppins(fontSize: 14, color: Colors.white70)),
                   ],
                 ),
                 Slider(
-                  value: _totalMatches.toDouble(),
-                  min: 1, max: 200, divisions: 199, // Scaled up to 200 max matches
+                  value: _ballsPerOver.toDouble(),
+                  min: 1, max: 6, divisions: 5,
                   activeColor: AppTheme.goldAccent,
                   inactiveColor: AppTheme.cardBorder,
-                  onChanged: (v) => setState(() => _totalMatches = v.round()),
+                  onChanged: (v) => setState(() => _ballsPerOver = v.round()),
                 ),
               ],
             ),
           ),
           const SizedBox(height: 14),
-
           _TournCard(
             title: '👥 Teams Ki Tadad',
             child: Column(
@@ -251,51 +281,91 @@ class _CreateTournamentTabState extends State<_CreateTournamentTab> {
                         icon: const Icon(Icons.remove_circle, color: Colors.red, size: 32)),
                     Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 20),
-                      child: Text('$_totalTeams', style: GoogleFonts.poppins(fontSize: 36, fontWeight: FontWeight.w900, color: Colors.white)),
+                      child: Text('$_totalTeams', style: GoogleFonts.poppins(fontSize: 32, fontWeight: FontWeight.w900, color: Colors.white)),
                     ),
                     IconButton(
                         onPressed: () { if (_totalTeams < 16) _updateTeams(_totalTeams + 1); },
                         icon: const Icon(Icons.add_circle, color: Color(0xFF4CAF50), size: 32)),
                   ],
                 ),
+                Text('Total generated matches: $_totalMatches', style: GoogleFonts.poppins(fontSize: 11, color: AppTheme.goldAccent)),
               ],
             ),
           ),
           const SizedBox(height: 14),
-
           _TournCard(
             title: '🛡️ Teams Ke Naam',
-            child: Column(
-              children: _teamNames.asMap().entries.map((e) => Padding(
+            child: ListView.builder(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              itemCount: _teamNames.length,
+              itemBuilder: (context, idx) => Padding(
                 padding: const EdgeInsets.only(bottom: 8),
                 child: Row(
                   children: [
                     Container(
                       width: 30, height: 30,
                       decoration: BoxDecoration(
-                        color: AppTheme.lightGreen.withValues(alpha: 0.2),
+                        color: AppTheme.accentGreen.withValues(alpha: 0.15),
                         borderRadius: BorderRadius.circular(6),
                       ),
-                      child: Center(child: Text('${e.key + 1}', style: GoogleFonts.poppins(fontWeight: FontWeight.w800, color: AppTheme.accentGreen, fontSize: 13))),
+                      child: Center(child: Text('${idx + 1}', style: GoogleFonts.poppins(fontWeight: FontWeight.w800, color: AppTheme.accentGreen, fontSize: 13))),
                     ),
                     const SizedBox(width: 10),
                     Expanded(
                       child: TextField(
-                        controller: e.value,
+                        controller: _teamNames[idx],
                         style: const TextStyle(color: Colors.white, fontSize: 14),
-                        decoration: InputDecoration(
-                          hintText: 'Team ${e.key + 1} ka naam',
-                          contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                        decoration: const InputDecoration(
+                          hintText: 'Team ka naam',
+                          contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                          border: InputBorder.none,
+                          fillColor: Color(0xFF071524),
+                          filled: true,
                         ),
                       ),
                     ),
                   ],
                 ),
-              )).toList(),
+              ),
             ),
           ),
-          const SizedBox(height: 24),
 
+          // 🔥 NAYA CARD: Har match ke liye Custom Date-Time configuration UI
+          const SizedBox(height: 14),
+          _TournCard(
+            title: '📅 Matches Ka Date & Time Set Karein',
+            child: ListView.builder(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              itemCount: _matchDates.length,
+              itemBuilder: (context, index) {
+                return Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 4),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        'Match ${index + 1} Schedule:',
+                        style: GoogleFonts.poppins(color: Colors.white70, fontSize: 13),
+                      ),
+                      TextButton.icon(
+                        onPressed: () => _selectMatchDateTime(index),
+                        icon: const Icon(Icons.calendar_month, color: AppTheme.accentGreen, size: 18),
+                        label: Text(
+                          DateFormat('dd MMM, hh:mm a').format(_matchDates[index]),
+                          style: GoogleFonts.poppins(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13),
+                        ),
+                        style: TextButton.styleFrom(backgroundColor: const Color(0xFF071524)),
+                      ),
+                    ],
+                  ),
+                );
+              },
+            ),
+          ),
+
+          const SizedBox(height: 24),
           SizedBox(
             width: double.infinity,
             child: ElevatedButton.icon(
@@ -305,34 +375,176 @@ class _CreateTournamentTabState extends State<_CreateTournamentTab> {
                   : const Icon(Icons.emoji_events_rounded),
               label: Text(_isCreating ? 'Tournament Ban Raha Hai...' : '🏆 Tournament Banao', style: GoogleFonts.poppins(fontWeight: FontWeight.bold)),
               style: ElevatedButton.styleFrom(
+                backgroundColor: AppTheme.accentGreen,
+                foregroundColor: Colors.black,
                 padding: const EdgeInsets.symmetric(vertical: 16),
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
               ),
             ),
           ),
-          const SizedBox(height: 20),
+        ],
+      ),
+    );
+  }
+}
+
+// Sirf _ActiveTournamentTab class ke andar build method mein badlao karein:
+class _ActiveTournamentTab extends StatelessWidget {
+  const _ActiveTournamentTab();
+
+  void _showEditDialog(BuildContext context, MatchProvider provider, String id, String currentName) {
+    final ctrl = TextEditingController(text: currentName);
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppTheme.cardBg,
+        title: Text('Edit Tournament Name', style: GoogleFonts.poppins(color: Colors.white)),
+        content: TextField(
+          controller: ctrl,
+          style: const TextStyle(color: Colors.white),
+          decoration: const InputDecoration(enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: Colors.white30))),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+          ElevatedButton(
+            onPressed: () {
+              if (ctrl.text.trim().isNotEmpty) {
+                provider.updateTournamentName(id, ctrl.text.trim());
+                Navigator.pop(ctx);
+              }
+            },
+            child: const Text('Save'),
+          )
         ],
       ),
     );
   }
 
-  String _formatName(TournamentFormat f) {
-    switch (f) {
-      case TournamentFormat.roundRobin: return 'Round Robin';
-      case TournamentFormat.knockout: return 'Knockout';
-      case TournamentFormat.leagueAndKnockout: return 'League + Knockout';
-    }
-  }
+  @override
+  Widget build(BuildContext context) {
+    final provider = context.watch<MatchProvider>();
+    final tournament = provider.currentTournament;
 
-  String _formatDesc(TournamentFormat f) {
-    switch (f) {
-      case TournamentFormat.roundRobin: return 'Har team se ek match compulsorily khela jayega';
-      case TournamentFormat.knockout: return 'Jo team haregi woh tournament se seedha bahar';
-      case TournamentFormat.leagueAndKnockout: return 'Pehle league phase hoga phir final top rounds';
+    if (tournament == null) {
+      return Center(
+        child: Text('Koi active tournament nahi hai', style: GoogleFonts.poppins(color: Colors.white70, fontSize: 16)),
+      );
     }
+
+    final points = tournament.pointsTable;
+
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: [
+        // 🔥 TOURNAMENT CONTROL HEADER CARD (With Edit & Delete Controls)
+        Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(color: AppTheme.cardBg, borderRadius: BorderRadius.circular(12)),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Expanded(
+                child: Text(
+                  '🏆 ${tournament.name}',
+                  style: GoogleFonts.poppins(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              Row(
+                children: [
+                  IconButton(
+                    icon: const Icon(Icons.edit, color: Colors.blueAccent, size: 20),
+                    onPressed: () => _showEditDialog(context, provider, tournament.id, tournament.name),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.delete_forever, color: Colors.redAccent, size: 20),
+                    onPressed: () {
+                      // Prompt Confirmation
+                      provider.deleteTournament(tournament.id);
+                    },
+                  ),
+                ],
+              )
+            ],
+          ),
+        ),
+        const SizedBox(height: 14),
+
+        _TournCard(
+          title: '📊 Points Table Overview',
+          child: Table(
+            border: TableBorder.all(color: Colors.white12),
+            defaultVerticalAlignment: TableCellVerticalAlignment.middle,
+            children: [
+              TableRow(
+                children: ['Team', 'P', 'W', 'L', 'Pts']
+                    .map((h) => Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 8.0),
+                  child: Text(h, textAlign: TextAlign.center, style: GoogleFonts.poppins(color: const Color(0xFF6B8FA6), fontWeight: FontWeight.bold)),
+                ))
+                    .toList(),
+              ),
+              ...tournament.teams.map((t) {
+                final p = points[t.id] ?? {'played': 0, 'won': 0, 'lost': 0, 'points': 0};
+                return TableRow(
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.all(8.0),
+                      child: Text(t.name, style: GoogleFonts.poppins(color: Colors.white, fontWeight: FontWeight.w500)),
+                    ),
+                    Text('${p['played']}', textAlign: TextAlign.center, style: GoogleFonts.poppins(color: Colors.white)),
+                    Text('${p['won']}', textAlign: TextAlign.center, style: GoogleFonts.poppins(color: Colors.white)),
+                    Text('${p['lost']}', textAlign: TextAlign.center, style: GoogleFonts.poppins(color: Colors.white)),
+                    Text('${p['points']}', textAlign: TextAlign.center, style: GoogleFonts.poppins(color: Colors.white, fontWeight: FontWeight.bold)),
+                  ],
+                );
+              }),
+            ],
+          ),
+        ),
+        const SizedBox(height: 20),
+
+        _TournCard(
+          title: '📅 Schedule List (Khelne ke liye click karein)',
+          child: Column(
+            children: tournament.schedule.map((m) {
+              final t1 = tournament.teams.firstWhere((t) => t.id == m.team1Id, orElse: () => TeamModel(id: '', name: 'Unknown', players: []));
+              final t2 = tournament.teams.firstWhere((t) => t.id == m.team2Id, orElse: () => TeamModel(id: '', name: 'Unknown', players: []));
+
+              final bool isDone = m.matchStatus == 'completed';
+              final bool isLive = m.matchStatus == 'live';
+
+              return Card(
+                color: const Color(0xFF071524),
+                margin: const EdgeInsets.only(bottom: 8),
+                child: ListTile(
+                  title: Text('${t1.name} vs ${t2.name}', style: GoogleFonts.poppins(color: Colors.white, fontSize: 14)),
+                  subtitle: Text(isLive ? '⏸️ Click to Resume Match' : '📅 Tap to start whenever you want', style: TextStyle(color: isLive ? AppTheme.accentGreen : Colors.white38, fontSize: 11)),
+                  trailing: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                        color: isDone ? Colors.green.withValues(alpha: 0.2) : (isLive ? Colors.blue.withValues(alpha: 0.2) : Colors.orange.withValues(alpha: 0.2)),
+                        borderRadius: BorderRadius.circular(4)
+                    ),
+                    child: Text(
+                      isDone ? 'Done' : (isLive ? 'Live' : 'Pending'),
+                      style: TextStyle(color: isDone ? Colors.green : (isLive ? Colors.blue : Colors.orange), fontWeight: FontWeight.bold, fontSize: 11),
+                    ),
+                  ),
+                  onTap: () {
+                    // 🔥 Kisi bhi waqt koi bhi match start/resume ho sakta hai
+                    provider.startTournamentMatch(m, t1, t2, tournament.overs);
+                    Navigator.push(context, MaterialPageRoute(builder: (_) => ScoringScreen(match: provider.currentMatch!)));
+                  },
+                ),
+              );
+            }).toList(),
+          ),
+        ),
+      ],
+    );
   }
 }
-
 class _TournCard extends StatelessWidget {
   final String title;
   final Widget child;
@@ -357,205 +569,5 @@ class _TournCard extends StatelessWidget {
         ],
       ),
     );
-  }
-}
-
-// ============================================================
-// Active Tournament Tab
-// ============================================================
-class _ActiveTournamentTab extends StatelessWidget {
-  const _ActiveTournamentTab();
-
-  @override
-  Widget build(BuildContext context) {
-    final tournament = context.watch<MatchProvider>().currentTournament;
-
-    if (tournament == null) {
-      return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            const Icon(Icons.emoji_events_outlined, size: 64, color: Color(0xFF6B8FA6)),
-            const SizedBox(height: 16),
-            Text('Koi active tournament nahi mila', style: GoogleFonts.poppins(fontSize: 16, color: Colors.white70)),
-            const SizedBox(height: 8),
-            Text('"Naya Tournament" tab se shuru karein', style: GoogleFonts.poppins(fontSize: 13, color: const Color(0xFF6B8FA6))),
-          ],
-        ),
-      );
-    }
-
-    final points = tournament.pointsTable;
-
-    return ListView( // Switch to ListView for better scroll performance with huge 200 items lists
-      padding: const EdgeInsets.all(16),
-      children: [
-        // Tournament banner card
-        Container(
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            gradient: const LinearGradient(colors: [Color(0xFF7B6000), Color(0xFF1B5E20)]),
-            borderRadius: BorderRadius.circular(14),
-          ),
-          child: Row(
-            children: [
-              const Icon(Icons.emoji_events, color: Color(0xFFFFD700), size: 36),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(tournament.name, style: GoogleFonts.poppins(fontSize: 18, fontWeight: FontWeight.w800, color: Colors.white)),
-                    Text('${tournament.teams.length} Teams | ${tournament.totalMatches} Matches | ${tournament.overs} Overs',
-                        style: GoogleFonts.poppins(fontSize: 12, color: Colors.white70)),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 16),
-
-        // Points table
-        _TournCard(
-          title: '📊 Points Table Overview',
-          child: Table(
-            border: TableBorder.all(color: Colors.white12, width: 0.5, borderRadius: BorderRadius.circular(4)),
-            columnWidths: const {
-              0: FlexColumnWidth(3),
-              1: FlexColumnWidth(1),
-              2: FlexColumnWidth(1),
-              3: FlexColumnWidth(1),
-              4: FlexColumnWidth(1),
-            },
-            children: [
-              TableRow(
-                decoration: const BoxDecoration(color: Color(0xFF0F2537)),
-                children: ['Team', 'P', 'W', 'L', 'Pts'].map((h) => Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 8),
-                  child: Text(h, textAlign: TextAlign.center, style: GoogleFonts.poppins(fontSize: 12, fontWeight: FontWeight.bold, color: const Color(0xFF6B8FA6))),
-                )).toList(),
-              ),
-              ...tournament.teams.map((t) {
-                final p = points[t.id] ?? {};
-                return TableRow(
-                  children: [
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-                      child: Text(t.name, style: GoogleFonts.poppins(fontSize: 12, color: Colors.white, fontWeight: FontWeight.w500)),
-                    ),
-                    ...['played', 'won', 'lost', 'points'].map((k) => Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
-                      child: Text('${p[k] ?? 0}', textAlign: TextAlign.center, style: GoogleFonts.poppins(fontSize: 12, color: Colors.white)),
-                    )),
-                  ],
-                );
-              }),
-            ],
-          ),
-        ),
-        const SizedBox(height: 16),
-
-        // Schedule list section with action handling
-        _TournCard(
-          title: '📅 Match Schedule (Click to Open/View)',
-          child: ListView.builder(
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            itemCount: tournament.schedule.length,
-            itemBuilder: (context, index) {
-              final m = tournament.schedule[index];
-              final t1 = tournament.teams.firstWhere((t) => t.id == m.team1Id,
-                  orElse: () => TeamModel(id: '', name: 'Unknown'));
-              final t2 = tournament.teams.firstWhere((t) => t.id == m.team2Id,
-                  orElse: () => TeamModel(id: '', name: 'Unknown'));
-
-              final bool isDone = m.winnerId != null;
-
-              return InkWell(
-                onTap: () {
-                  if (isDone) {
-                    // 🔥 CLICK ACTION: Agar match finish hai toh scorecard screen par bhejo
-                    if (m.matchModelData != null) {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (context) => MatchHistoryDetailScreen(match: m.matchModelData!),
-                        ),
-                      );
-                    } else {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('Is match ka detail data nahi mila.'))
-                      );
-                    }
-                  } else {
-                    // 🏏 CLICK ACTION: Agar match pending hai toh scoring screen setup pe le jao
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: Text('🏏 Match #${m.matchNumber} (${t1.name} vs ${t2.name}) ki Scoring shuru karein!'),
-                        backgroundColor: AppTheme.accentGreen,
-                      ),
-                    );
-                    // Yahan aap apna Navigator.push laga sakte hain jo Live Scoring setup par le jaye
-                  }
-                },
-                child: Container(
-                  margin: const EdgeInsets.only(bottom: 8),
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-                  decoration: BoxDecoration(
-                    color: isDone ? AppTheme.lightGreen.withValues(alpha: 0.05) : const Color(0xFF071524),
-                    borderRadius: BorderRadius.circular(10),
-                    border: Border.all(
-                      color: isDone ? AppTheme.accentGreen.withValues(alpha: 0.2) : AppTheme.cardBorder,
-                      width: 0.5,
-                    ),
-                  ),
-                  child: Row(
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.all(6),
-                        decoration: BoxDecoration(
-                          color: Colors.white12,
-                          borderRadius: BorderRadius.circular(6),
-                        ),
-                        child: Text('M${m.matchNumber}', style: GoogleFonts.poppins(fontSize: 11, color: AppTheme.goldAccent, fontWeight: FontWeight.w700)),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Text('${t1.name} vs ${t2.name}', style: GoogleFonts.poppins(fontSize: 13, color: Colors.white, fontWeight: FontWeight.w500)),
-                      ),
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                        decoration: BoxDecoration(
-                          color: isDone ? AppTheme.accentGreen.withValues(alpha: 0.15) : Colors.white10,
-                          borderRadius: BorderRadius.circular(6),
-                        ),
-                        child: Text(
-                          isDone ? 'Done' : 'Pending',
-                          style: GoogleFonts.poppins(
-                            fontSize: 10,
-                            fontWeight: FontWeight.w700,
-                            color: isDone ? AppTheme.accentGreen : Colors.white38,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              );
-            },
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-// Extension fallback feature if match data handling is mapped inside schedule model
-extension CustomTournamentMatch on TournamentMatch {
-  MatchModel? get matchModelData {
-    // Agar aapke TournamentMatch model me actual complete MatchModel save ho raha hai toh yahan return hoga.
-    // Yeh temporary logic handle karne ke liye banaya hai taake code crash na ho.
-    return null;
   }
 }
