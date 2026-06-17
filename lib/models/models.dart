@@ -128,27 +128,24 @@ class PlayerModel {
   };
 
   factory PlayerModel.fromMap(Map<String, dynamic> map) => PlayerModel(
-    id: map['id']?.toString() ?? '',
-    name: map['name']?.toString() ?? 'Unknown',
-    photoPath: map['photoPath']?.toString(), // Nullable fields ko bina fallback ke chorna sahi hai
-    photoUrl: map['photoUrl']?.toString(),
-    jerseyNumber: map['jerseyNumber'] is int ? map['jerseyNumber'] : int.tryParse(map['jerseyNumber']?.toString() ?? '0') ?? 0,
-    role: map['role']?.toString() ?? 'Batsman',
-    runs: map['runs'] is int ? map['runs'] : int.tryParse(map['runs']?.toString() ?? '0') ?? 0,
-    balls: map['balls'] is int ? map['balls'] : int.tryParse(map['balls']?.toString() ?? '0') ?? 0,
-    fours: map['fours'] is int ? map['fours'] : int.tryParse(map['fours']?.toString() ?? '0') ?? 0,
-    sixes: map['sixes'] is int ? map['sixes'] : int.tryParse(map['sixes']?.toString() ?? '0') ?? 0,
-    isOut: map['isOut'] is bool ? map['isOut'] : (map['isOut']?.toString() == 'true'),
-
-    // 🔥 FIXED: Agar database mein outMode null ya khali ho, toh compulsory empty string '' milegi
-    outMode: (map['outMode'] == null || map['outMode'].toString() == 'null') ? '' : map['outMode'].toString(),
-
-    oversBowled: map['oversBowled'] is int ? map['oversBowled'] : int.tryParse(map['oversBowled']?.toString() ?? '0') ?? 0,
-    runsGiven: map['runsGiven'] is int ? map['runsGiven'] : int.tryParse(map['runsGiven']?.toString() ?? '0') ?? 0,
-    wicketsTaken: map['wicketsTaken'] is int ? map['wicketsTaken'] : int.tryParse(map['wicketsTaken']?.toString() ?? '0') ?? 0,
-    maidenOvers: map['maidenOvers'] is int ? map['maidenOvers'] : int.tryParse(map['maidenOvers']?.toString() ?? '0') ?? 0,
-    wides: map['wides'] is int ? map['wides'] : int.tryParse(map['wides']?.toString() ?? '0') ?? 0,
-    noBalls: map['noBalls'] is int ? map['noBalls'] : int.tryParse(map['noBalls']?.toString() ?? '0') ?? 0,
+    id: map['id'] ?? '',
+    name: map['name'] ?? '',
+    photoPath: map['photoPath'],
+    photoUrl: map['photoUrl'],
+    jerseyNumber: map['jerseyNumber'] ?? 0,
+    role: map['role'] ?? 'Batsman',
+    runs: map['runs'] ?? 0,
+    balls: map['balls'] ?? 0,
+    fours: map['fours'] ?? 0,
+    sixes: map['sixes'] ?? 0,
+    isOut: map['isOut'] ?? false,
+    outMode: map['outMode'] ?? '',
+    oversBowled: map['oversBowled'] ?? 0,
+    runsGiven: map['runsGiven'] ?? 0,
+    wicketsTaken: map['wicketsTaken'] ?? 0,
+    maidenOvers: map['maidenOvers'] ?? 0,
+    wides: map['wides'] ?? 0,
+    noBalls: map['noBalls'] ?? 0,
   );
 
   double get strikeRate => balls > 0 ? (runs / balls * 100) : 0.0;
